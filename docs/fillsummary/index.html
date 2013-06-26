@@ -1,0 +1,245 @@
+<!DOCTYPE HTML>
+<html lang="en-US">
+<head>
+  <meta charset="UTF-8">
+  <title>fill summary 的dedup机制</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link href='http://fonts.googleapis.com/css?family=Lato:100,300,400,700,900,100italic,300italic,400italic,700italic,900italic' rel='stylesheet' type='text/css'>
+  <link href='http://fonts.googleapis.com/css?family=Arizonia' rel='stylesheet' type='text/css'>
+  <link rel="stylesheet" href="/css/normalize.css" />
+  <link rel="stylesheet" href="/css/gridism.css" />
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/pygments.css" />
+  <link rel="icon" type="image/x-icon" href="/favicon.png" />
+  <script src="/js/modernizr-2.5.3.min.js"></script>
+</head>
+
+
+<body class="wrap">
+  <header>
+  <nav class="mobile-nav show-on-mobiles">
+    <ul>
+  <li class="">
+    <a href="/">Overview</a>
+  </li>
+  <li class="current">
+    <a href="/docs/home">Doc<span class="show-on-mobiles">s</span><span class="hide-on-mobiles">umentation</span></a>
+  </li>
+ 
+</ul>
+
+  </nav>
+  <div class="grid">
+    <div class="unit one-third center-on-mobiles">
+      <h1>
+        <a href="/">Knowledge in Progress</a>
+      </h1>
+    </div>
+    <nav class="main-nav unit two-thirds hide-on-mobiles">
+      <ul>
+  <li class="">
+    <a href="/">Overview</a>
+  </li>
+  <li class="current">
+    <a href="/docs/home">Doc<span class="show-on-mobiles">s</span><span class="hide-on-mobiles">umentation</span></a>
+  </li>
+ 
+</ul>
+
+    </nav>
+  </div>
+</header>
+
+
+    <section class="docs">
+    <div class="grid">
+
+      <div class="docs-nav-mobile unit whole show-on-mobiles">
+  <select onchange="if (this.value) window.location.href=this.value">
+    <option value="">Navigate the docs…</option>
+    <optgroup label="Getting started">
+      <option value="/docs/home">Welcome</option>
+      
+    </optgroup>
+    <optgroup label="Your Content">
+      <option value="/docs/fillsummary">fill summary</option>
+      
+    </optgroup>
+ 
+  </select>
+</div>
+
+
+      <div class="unit four-fifths">
+        <article>
+          <h1>fill summary 的dedup机制</h1>
+          <p>fill__summary__index.py 是位于 $SPLUNK__HOME__/bin/ 下的一个工具文件</p>
+
+<p>它的作用是用来填补summary index生成过程中产生的空洞</p>
+
+<p>例如，调用的方法如下</p>
+<div class='highlight'><pre><code class='python'><span class='n'>splunk</span> <span class='n'>cmd</span> <span class='n'>python</span> <span class='n'>fill_summary_index</span><span class='o'>.</span><span class='n'>py</span> <span class='o'>-</span><span class='n'>app</span> <span class='n'>splunkdotcom</span> 
+<span class='o'>-</span><span class='n'>name</span> <span class='s'>&quot;*&quot;</span> <span class='o'>-</span><span class='n'>et</span> <span class='o'>-</span><span class='n'>mon</span><span class='nd'>@mon</span> <span class='o'>-</span><span class='n'>lt</span> <span class='nd'>@mon</span> <span class='o'>-</span><span class='n'>dedup</span> <span class='n'>true</span> <span class='o'>-</span><span class='n'>auth</span> <span class='n'>admin</span><span class='p'>:</span><span class='n'>changeme</span>
+</code></pre></div>
+<p>其中 -name 指定的是需要填补数据的schedule search的名称，在这个例子里面是所有的搜索。</p>
+
+<p>-dedup是用来确认是否需要启用检测重复的选项，一旦使用-dedup True或者 -dedup 1，则这个脚本会尝试避免生成重复的summary数据</p>
+<div class='highlight'><pre><code class='python'><span class='o'>-</span><span class='n'>dedup</span> <span class='o'>&lt;</span><span class='n'>boolean</span><span class='o'>&gt;</span>        <span class='n'>If</span> <span class='n'>true</span><span class='p'>,</span> <span class='n'>do</span> <span class='ow'>not</span> <span class='n'>run</span> <span class='n'>a</span> <span class='n'>saved</span> <span class='n'>search</span> <span class='k'>for</span> <span class='n'>a</span> <span class='n'>scheduled</span>
+                           <span class='n'>time</span> <span class='k'>if</span> <span class='n'>data</span> <span class='n'>already</span> <span class='n'>exists</span> <span class='ow'>in</span> <span class='n'>the</span> <span class='n'>summary</span> <span class='n'>index</span>
+                           <span class='n'>Default</span> <span class='ow'>is</span> <span class='n'>false</span>
+</code></pre></div>
+<p>我们查看fill__summary__index.py来理解这个机制的工作原理</p>
+
+<p>在脚本365行</p>
+<div class='highlight'><pre><code class='python'><span class='k'>if</span> <span class='n'>dedup</span><span class='p'>:</span>
+  <span class='c'># try to find for what scheduled times the summary index has already been populated so we only fill in gaps</span>
+  <span class='c'># do this by dispatching a job</span>
+
+  <span class='c'># first replace placeholders in the dedupsearch</span>
+  <span class='n'>cdsearch</span> <span class='o'>=</span> <span class='n'>dedupsearch</span><span class='o'>.</span><span class='n'>replace</span><span class='p'>(</span><span class='s'>&quot;$namefield$&quot;</span><span class='p'>,</span> <span class='n'>namefield</span><span class='p'>)</span>
+  <span class='n'>cdsearch</span> <span class='o'>=</span> <span class='n'>cdsearch</span><span class='o'>.</span><span class='n'>replace</span><span class='p'>(</span><span class='s'>&quot;$timefield$&quot;</span><span class='p'>,</span> <span class='n'>timefield</span><span class='p'>)</span>  
+  <span class='n'>cdsearch</span> <span class='o'>=</span> <span class='n'>cdsearch</span><span class='o'>.</span><span class='n'>replace</span><span class='p'>(</span><span class='s'>&quot;$index$&quot;</span><span class='p'>,</span> <span class='n'>index</span><span class='p'>)</span>
+  <span class='n'>cdsearch</span> <span class='o'>=</span> <span class='n'>cdsearch</span><span class='o'>.</span><span class='n'>replace</span><span class='p'>(</span><span class='s'>&quot;$name$&quot;</span><span class='p'>,</span> <span class='n'>ssname</span><span class='p'>)</span>
+  <span class='n'>cdsearch</span> <span class='o'>=</span> <span class='n'>cdsearch</span><span class='o'>.</span><span class='n'>replace</span><span class='p'>(</span><span class='s'>&quot;$et$&quot;</span><span class='p'>,</span> <span class='n'>et</span><span class='p'>)</span>
+  <span class='n'>cdsearch</span> <span class='o'>=</span> <span class='n'>cdsearch</span><span class='o'>.</span><span class='n'>replace</span><span class='p'>(</span><span class='s'>&quot;$lt$&quot;</span><span class='p'>,</span> <span class='n'>lt</span><span class='p'>)</span>
+  
+ 
+  <span class='k'>print</span> <span class='s'>&quot;Executing search to find existing data: &#39;</span><span class='si'>%s</span><span class='s'>&#39;&quot;</span> <span class='o'>%</span> <span class='n'>cdsearch</span>
+  <span class='c'># note: we cannot limit search by et and lt because et and lt are just the bounds of the scheduled times,</span>
+  <span class='c'># not the bounds for the indexed time of the events that those searches would produce</span>
+  <span class='k'>try</span><span class='p'>:</span>
+    <span class='n'>cdjob</span> <span class='o'>=</span> <span class='n'>splunk</span><span class='o'>.</span><span class='n'>search</span><span class='o'>.</span><span class='n'>dispatch</span><span class='p'>(</span><span class='n'>cdsearch</span><span class='p'>,</span> <span class='n'>sessionKey</span><span class='o'>=</span><span class='n'>sk</span><span class='p'>,</span> <span class='n'>namespace</span><span class='o'>=</span><span class='n'>app</span><span class='p'>,</span> <span class='n'>owner</span><span class='o'>=</span><span class='n'>owner</span><span class='p'>)</span>
+  <span class='k'>except</span> <span class='n'>splunk</span><span class='o'>.</span><span class='n'>SearchException</span><span class='p'>,</span> <span class='n'>msg</span><span class='p'>:</span>
+    <span class='n'>printError</span><span class='p'>(</span><span class='n'>msg</span><span class='p'>)</span> <span class='c'># fatal error, just exits</span>
+</code></pre></div>
+<p>一旦启用了dedup , 这个脚本会首先触发一个以dedupsearch为内容的搜索语句</p>
+
+<p>在第33行有这个dedupsearch的定义</p>
+<div class='highlight'><pre><code class='python'>  <span class='n'>dedupsearch</span> <span class='o'>=</span> <span class='s'>&#39;search splunk_server=local index=$index$ </span>
+                  <span class='err'>$</span><span class='n'>namefield</span><span class='err'>$</span><span class='o'>=</span><span class='s'>&quot;$name$&quot;</span> <span class='o'>|</span>  <span class='n'>stats</span> <span class='n'>count</span> <span class='n'>by</span> <span class='err'>$</span><span class='n'>timefield</span><span class='err'>$</span><span class='s'>&#39;</span>
+</code></pre></div>
+<p>在这个搜索中，所有的 $index$, $namefield$ $name$等都会实际的数据替换</p>
+
+<p>如果index没有指定，则会取默认值summary。 因此，用上面的例子转换出来的实际的结果是</p>
+<div class='highlight'><pre><code class='python'><span class='n'>search</span> <span class='n'>splunk_server</span><span class='o'>=</span><span class='n'>local</span> <span class='n'>index</span><span class='o'>=</span><span class='n'>summary</span> <span class='n'>source</span><span class='o'>=*</span> <span class='o'>|</span> <span class='n'>stats</span> <span class='n'>count</span> <span class='n'>by</span> <span class='n'>search_now</span>
+</code></pre></div>
+<p>我们可以在此看到三个问题会造成在实际情况下dedup无效，</p>
+
+<ol>
+<li>这个语句里指定了splunk_server=local，并不适合在summary index被导出到indexer上的场景</li>
+
+<li>这个语句里如果不指定index参数，则默认会使用summary的内建索引， 而非我们实际希望监测的目标index. 3.这个语句里并没有实际限制时间范围</li>
+</ol>
+
+<p>我们可以通过命令行参数 -dedupsearch 来指定一个定制版本的dedupsearch来解决这些问题，例如</p>
+
+<p><div class='highlight'><pre><code class='python'><span class='n'>splunk</span> <span class='n'>cmd</span> <span class='n'>python</span> <span class='n'>fill_summary_index</span><span class='o'>.</span><span class='n'>py</span>  <span class='o'>-</span><span class='n'>app</span> <span class='n'>bizlogic</span> <span class='o'>-</span><span class='n'>name</span> <span class='s'>&quot;bizlogic_collect_txdetail&quot;</span> <span class='o'>-</span><span class='n'>et</span> <span class='o'>-</span><span class='mi'>35</span><span class='n'>mon</span> <span class='o'>-</span><span class='n'>lt</span> <span class='nd'>@mon</span> <span class='o'>-</span><span class='n'>dedup</span> <span class='n'>true</span> <span class='o'>-</span><span class='n'>dedupsearch</span> <span class='s'>&quot;search index=bizlogic_si_trans earliest=-88mon latest=-1mon source=bizlogic_collect_txdetail |  stats count by search_now&quot;</span>
+</code></pre></div></p>
+
+<p>按此调用以后，我们可以看到执行结果里会出现不同的现象</p>
+
+<blockquote>
+<p>For saved search &#8216;bizlogic_collect_txdetail&#8217;</p>
+</blockquote>
+
+<blockquote>
+<p>Executing search to find existing data: &#8216;search index=bizlogic_si_trans earliest=-88mon latest=-1mon source=bizlogic_collect_txdetail | stats count by search_now&#8217;</p>
+</blockquote>
+
+<blockquote>
+<p>waiting for job sid = &#8216;1372272136.1817&#8217; &#8230; finished</p>
+</blockquote>
+
+<blockquote>
+<p>Out of 24957 scheduled times, 3 will be skipped because they already exist.</p>
+</blockquote>
+
+<p>相应的已经生成过summary index的时间段就被跳过了</p>
+          <div class="section-nav">
+  <div class="left align-right">
+    
+      <a href="/docs/home" class="prev">
+        Back
+      </a>
+    
+  </div>
+  <div class="right align-left">
+    
+      <span class="next disabled">Next</span>
+    
+  </div>
+  <div class="clear"></div>
+</div>
+
+
+        </article>
+      </div>
+
+      <div class="unit one-fifth hide-on-mobiles">
+  <aside>
+    <h4>开始入门</h4>
+    <ul>
+      <li class="">
+        <a href="/docs/home">Welcome</a>
+      </li>
+     
+    </ul>
+    <h4>问题</h4>
+    <ul>
+      <li class="">
+        <a href="/docs/fillsummary">fill summary</a>
+      </li>
+      
+    </ul>
+    <h4>定制</h4>
+    <ul>
+      
+    </ul>
+    
+  </aside>
+</div>
+
+
+      <div class="clear"></div>
+
+    </div>
+  </section>
+
+
+  <footer>
+  <div class="grid">
+    <div class="unit one-third center-on-mobiles">
+      <p>By Vader</p></div>
+    <div class="unit two-thirds align-right center-on-mobiles">
+      <p>
+        Proudly hosted by
+        <a href="https://www.netis.com.cn">
+         netis.com.cn
+        </a>
+      </p>
+    </div>
+  </div>
+</footer>
+
+  
+  <!-- Gauges (http://gaug.es/) -->
+  <script type="text/javascript">
+    var _gauges = _gauges || [];
+    (function() {
+      var t   = document.createElement('script');
+      t.type  = 'text/javascript';
+      t.async = true;
+      t.id    = 'gauges-tracker';
+      t.setAttribute('data-site-id', '503c5af6613f5d0f19000027');
+      t.src = '//secure.gaug.es/track.js';
+      var s = document.getElementsByTagName('script')[0];
+      s.parentNode.insertBefore(t, s);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>
